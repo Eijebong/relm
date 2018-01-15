@@ -22,7 +22,6 @@
 #![feature(fn_traits, unboxed_closures)]
 
 extern crate chrono;
-extern crate futures_glib;
 extern crate gtk;
 #[macro_use]
 extern crate relm;

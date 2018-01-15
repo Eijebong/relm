@@ -21,7 +21,6 @@
 
 #![feature(conservative_impl_trait, fn_traits, proc_macro, unboxed_closures)]
 
-extern crate futures;
 extern crate gdk;
 extern crate gdk_pixbuf;
 extern crate gtk;

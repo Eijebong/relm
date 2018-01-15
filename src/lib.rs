@@ -19,7 +19,7 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! Asynchronous GUI library based on GTK+ and futures/tokio.
+//! Asynchronous GUI library based on GTK+ and may.
 //!
 //! This library provides a [`Widget`](trait.Widget.html) trait that you can use to create asynchronous GUI components.
 //! This is the trait you will need to implement for your application.
@@ -64,10 +64,6 @@
  *
  * TODO: add init() method to the Widget (or Update) trait as a shortcut for init::<Widget>()?
  *
- * TODO: alternative to tokio with a trait to get FD and add this FD to glib (perhaps using a
- * GSource).
- * For timers, add a connect_timeout!() macro or something.
- *
  * TODO: show a warning when a component is imediately destroyed.
  * FIXME: cannot add a trailing coma at the end of a initializer list.
  * TODO: switch from gtk::main() to MainLoop to avoid issues with nested loops.
@@ -105,10 +101,8 @@
  * These probably won't be needed anymore when switching to futures-glib (single-threaded model).
  * TODO: use weak pointers to avoid leaking.
  * TODO: should have a free function to delete the stream in connect_recv.
- * TODO: try tk-easyloop in another branch.
  */
 
-extern crate futures_glib;
 extern crate glib;
 extern crate glib_sys;
 extern crate gobject_sys;
@@ -123,9 +117,6 @@ mod container;
 mod macros;
 mod widget;
 
-use futures_glib::Executor;
-#[doc(hidden)]
-pub use futures_glib::MainLoop;
 #[doc(hidden)]
 pub use glib::Cast;
 #[doc(hidden)]
@@ -146,7 +137,6 @@ pub use relm_state::{
     Relm,
     Update,
     UpdateNew,
-    create_executor,
     execute,
 };
 use relm_state::init_component;
@@ -197,12 +187,12 @@ macro_rules! use_impl_self_type {
     };
 }
 
-fn create_widget_test<WIDGET>(executor: &Executor, model_param: WIDGET::ModelParam) -> Component<WIDGET>
+fn create_widget_test<WIDGET>(model_param: WIDGET::ModelParam) -> Component<WIDGET>
     where WIDGET: Widget + 'static,
           WIDGET::Msg: DisplayVariant + 'static,
 {
-    let (widget, component, relm) = create_widget(executor, model_param);
-    init_component::<WIDGET>(widget.stream(), component, executor, &relm);
+    let (widget, component, relm) = create_widget(model_param);
+    init_component::<WIDGET>(widget.stream(), component, &relm);
     widget
 }
 
@@ -214,8 +204,8 @@ pub fn create_component<CHILDWIDGET, WIDGET>(relm: &Relm<WIDGET>, model_param: C
           CHILDWIDGET::Msg: DisplayVariant + 'static,
           WIDGET: Widget,
 {
-    let (widget, component, child_relm) = create_widget::<CHILDWIDGET>(relm.executor(), model_param);
-    init_component::<CHILDWIDGET>(widget.stream(), component, relm.executor(), &child_relm);
+    let (widget, component, child_relm) = create_widget::<CHILDWIDGET>(model_param);
+    init_component::<CHILDWIDGET>(widget.stream(), component, &child_relm);
     widget
 }
 
@@ -227,22 +217,22 @@ pub fn create_container<CHILDWIDGET, WIDGET>(relm: &Relm<WIDGET>, model_param: C
           CHILDWIDGET::Msg: DisplayVariant + 'static,
           WIDGET: Widget,
 {
-    let (widget, component, child_relm) = create_widget::<CHILDWIDGET>(relm.executor(), model_param);
+    let (widget, component, child_relm) = create_widget::<CHILDWIDGET>(model_param);
     let container = component.container().clone();
     let containers = component.other_containers();
-    init_component::<CHILDWIDGET>(widget.stream(), component, relm.executor(), &child_relm);
+    init_component::<CHILDWIDGET>(widget.stream(), component, &child_relm);
     ContainerComponent::new(widget, container, containers)
 }
 
 /// Create a new relm widget with `model_param` as initialization value.
-fn create_widget<WIDGET>(executor: &Executor, model_param: WIDGET::ModelParam)
+fn create_widget<WIDGET>(model_param: WIDGET::ModelParam)
     -> (Component<WIDGET>, WIDGET, Relm<WIDGET>)
     where WIDGET: Widget + 'static,
           WIDGET::Msg: DisplayVariant + 'static,
 {
     let stream = EventStream::new();
 
-    let relm = Relm::new(executor.clone(), stream.clone());
+    let relm = Relm::new(stream.clone());
     let model = WIDGET::model(&relm, model_param);
     let mut widget = WIDGET::view(&relm, model);
     widget.init_view();
@@ -318,11 +308,9 @@ pub fn init_test<WIDGET>(model_param: WIDGET::ModelParam) -> Result<Component<WI
     where WIDGET: Widget + 'static,
           WIDGET::Msg: DisplayVariant + 'static
 {
-    futures_glib::init();
     init_gtk();
 
-    let executor = create_executor();
-    let component = create_widget_test::<WIDGET>(&executor, model_param);
+    let component = create_widget_test::<WIDGET>(model_param);
     Ok(component)
 }
 
@@ -331,12 +319,10 @@ pub fn init<WIDGET>(model_param: WIDGET::ModelParam) -> Result<Component<WIDGET>
     where WIDGET: Widget + 'static,
           WIDGET::Msg: DisplayVariant + 'static
 {
-    futures_glib::init();
     gtk::init().map_err(|_| ())?;
 
-    let executor = create_executor();
-    let (widget, component, relm) = create_widget::<WIDGET>(&executor, model_param);
-    init_component::<WIDGET>(widget.stream(), component, &executor, &relm);
+    let (widget, component, relm) = create_widget::<WIDGET>(model_param);
+    init_component::<WIDGET>(widget.stream(), component, &relm);
     Ok(widget)
 }
 

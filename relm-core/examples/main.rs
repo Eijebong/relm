@@ -20,30 +20,31 @@
  */
 
 extern crate chrono;
-extern crate futures;
-extern crate futures_glib;
 extern crate glib;
 extern crate gtk;
+#[macro_use]
+extern crate may;
 extern crate relm_core;
+extern crate send_cell;
 
 use std::time::Duration;
 
 use chrono::Local;
-use futures::Stream;
-use futures::future::Executor;
-use futures_glib::{Interval, MainContext};
+use glib::MainContext;
 use gtk::{
     Button,
     ButtonExt,
     ContainerExt,
     Inhibit,
     Label,
+    LabelExt,
     WidgetExt,
     Window,
     WindowType,
 };
 use gtk::Orientation::Vertical;
 use relm_core::EventStream;
+use send_cell::SendCell;
 
 use Msg::*;
 
@@ -65,7 +66,6 @@ struct Model {
 }
 
 fn main() {
-    futures_glib::init();
     gtk::init().unwrap();
 
     let vbox = gtk::Box::new(Vertical, 0);
@@ -91,8 +91,8 @@ fn main() {
 
     let other_widget_stream = EventStream::new();
     {
-        stream.observe(move |event: &Msg| {
-            other_widget_stream.emit(Quit);
+        stream.observe(other_widget_stream, |stream, event: &Msg| {
+            stream.emit(Quit);
             println!("Event: {:?}", event);
         });
     }
@@ -127,40 +127,48 @@ fn main() {
         counter: 0,
     };
 
-    fn update(event: Msg, model: &mut Model, widgets: &Widgets) {
+    fn update(event: Msg, model: &mut Model, widgets: &SendCell<Widgets>) {
         match event {
             Clock => {
                 let now = Local::now();
-                widgets.clock_label.set_text(&now.format("%H:%M:%S").to_string());
+                widgets.get().clock_label.set_text(&now.format("%H:%M:%S").to_string());
             },
             Decrement => {
                 model.counter -= 1;
-                widgets.counter_label.set_text(&model.counter.to_string());
+                widgets.get().counter_label.set_text(&model.counter.to_string());
             },
             Increment => {
                 model.counter += 1;
-                widgets.counter_label.set_text(&model.counter.to_string());
+                widgets.get().counter_label.set_text(&model.counter.to_string());
             },
             Quit => gtk::main_quit(),
         }
     }
 
-    let cx = MainContext::default(|cx| cx.clone());
-    let interval = {
+    // TODO
+    /*let interval = {
         let interval = Interval::new(Duration::from_secs(1));
         let stream = stream.clone();
         interval.map_err(|_| ()).for_each(move |_| {
             stream.emit(Clock);
             Ok(())
         })
-    };
-    cx.spawn(interval);
+    };*/
 
-    let event_future = stream.for_each(move |msg| {
-        update(msg, &mut model, &widgets);
-        Ok(())
+    let widgets = SendCell::new(widgets);
+    go!(move || {
+        loop {
+            match stream.get_event() {
+                Ok(msg) => {
+                    let context = MainContext::default().expect("context");
+                    context.invoke(move || {
+                        update(msg, &mut model, &widgets);
+                    });
+                },
+                Err(_) => break,
+            }
+        }
     });
-    cx.spawn(event_future);
 
     gtk::main();
 }

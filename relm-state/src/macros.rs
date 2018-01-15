@@ -106,8 +106,7 @@ macro_rules! connect_stream {
     // Connect to a message reception.
     // TODO: create another macro rule accepting multiple patterns.
     ($src_stream:ident @ $message:pat, $dst_stream:expr, $msg:expr) => {
-        let stream = $dst_stream.clone();
-        $src_stream.observe(move |msg| {
+        $src_stream.observe($dst_stream.clone(), move |stream, msg| {
             #[allow(unreachable_patterns)]
             match msg {
                 &$message =>  {

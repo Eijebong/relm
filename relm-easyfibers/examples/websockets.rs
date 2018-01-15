@@ -29,16 +29,12 @@
 extern crate base64;
 extern crate blake2;
 extern crate byteorder;
-extern crate futures;
 extern crate gtk;
 extern crate rand;
 #[macro_use]
 extern crate relm;
 #[macro_use]
 extern crate relm_derive;
-extern crate tokio_core;
-extern crate tokio_proto;
-extern crate tokio_service;
 extern crate twist;
 
 use std::net::ToSocketAddrs;

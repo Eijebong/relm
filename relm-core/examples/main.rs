@@ -21,16 +21,16 @@
 
 extern crate chrono;
 extern crate glib;
+extern crate glib_itc;
 extern crate gtk;
 #[macro_use]
 extern crate may;
 extern crate relm_core;
-extern crate send_cell;
 
 use std::time::Duration;
 
 use chrono::Local;
-use glib::MainContext;
+use glib::Continue;
 use gtk::{
     Button,
     ButtonExt,
@@ -43,8 +43,8 @@ use gtk::{
     WindowType,
 };
 use gtk::Orientation::Vertical;
+use may::coroutine::sleep;
 use relm_core::EventStream;
-use send_cell::SendCell;
 
 use Msg::*;
 
@@ -127,44 +127,43 @@ fn main() {
         counter: 0,
     };
 
-    fn update(event: Msg, model: &mut Model, widgets: &SendCell<Widgets>) {
+    fn update(event: Msg, model: &mut Model, widgets: &Widgets) {
         match event {
             Clock => {
                 let now = Local::now();
-                widgets.get().clock_label.set_text(&now.format("%H:%M:%S").to_string());
+                widgets.clock_label.set_text(&now.format("%H:%M:%S").to_string());
             },
             Decrement => {
                 model.counter -= 1;
-                widgets.get().counter_label.set_text(&model.counter.to_string());
+                widgets.counter_label.set_text(&model.counter.to_string());
             },
             Increment => {
                 model.counter += 1;
-                widgets.get().counter_label.set_text(&model.counter.to_string());
+                widgets.counter_label.set_text(&model.counter.to_string());
             },
             Quit => gtk::main_quit(),
         }
     }
 
-    // TODO
-    /*let interval = {
-        let interval = Interval::new(Duration::from_secs(1));
-        let stream = stream.clone();
-        interval.map_err(|_| ()).for_each(move |_| {
-            stream.emit(Clock);
-            Ok(())
-        })
-    };*/
+    let event_stream = stream.clone();
+    go!(move || {
+        loop {
+            event_stream.emit(Clock);
+            sleep(Duration::from_secs(1));
+        }
+        ()
+    });
 
-    let widgets = SendCell::new(widgets);
+    let (mut tx, mut rx) = glib_itc::channel();
+    rx.connect_recv(move |msg| {
+        update(msg, &mut model, &widgets);
+        Continue(true)
+    });
+
     go!(move || {
         loop {
             match stream.get_event() {
-                Ok(msg) => {
-                    let context = MainContext::default().expect("context");
-                    context.invoke(move || {
-                        update(msg, &mut model, &widgets);
-                    });
-                },
+                Ok(msg) => tx.send(msg),
                 Err(_) => break,
             }
         }

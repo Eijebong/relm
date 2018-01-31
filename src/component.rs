@@ -19,6 +19,10 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+use std::rc::Rc;
+
+use glib_itc::Receiver;
+
 use super::{EventStream, Widget};
 
 /// Widget that was added by the `ContainerWidget::add_widget()` method.
@@ -32,6 +36,7 @@ use super::{EventStream, Widget};
 #[must_use]
 #[derive(Clone)]
 pub struct Component<WIDGET: Widget> {
+    rx: Option<Rc<Receiver<WIDGET::Msg>>>,
     stream: EventStream<WIDGET::Msg>,
     widget: WIDGET::Root,
 }
@@ -46,6 +51,7 @@ impl<WIDGET: Widget> Component<WIDGET> {
     #[doc(hidden)]
     pub fn new(stream: EventStream<WIDGET::Msg>, widget: WIDGET::Root) -> Self {
         Component {
+            rx: None,
             stream,
             widget,
         }
@@ -54,6 +60,10 @@ impl<WIDGET: Widget> Component<WIDGET> {
     /// Emit a message of the widget stream.
     pub fn emit(&self, msg: WIDGET::Msg) {
         self.stream.emit(msg);
+    }
+
+    pub(crate) fn set_receiver(&mut self, rx: Receiver<WIDGET::Msg>) {
+        self.rx = Some(Rc::new(rx));
     }
 
     /// Get the event stream of the component.

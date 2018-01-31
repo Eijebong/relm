@@ -33,6 +33,8 @@
     unused_results,
 )]
 
+extern crate glib;
+extern crate glib_itc;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -43,6 +45,9 @@ mod into;
 mod macros;
 
 use std::time::SystemTime;
+
+use glib::Continue;
+use glib_itc::Receiver;
 
 pub use relm_core::EventStream;
 
@@ -159,7 +164,7 @@ impl DisplayVariant for () {
 /// Create a bare component, i.e. a component only implementing the Update trait, not the Widget
 /// trait.
 pub fn execute<UPDATE>(model_param: UPDATE::ModelParam) -> EventStream<UPDATE::Msg>
-where UPDATE: Send + Update + UpdateNew + 'static,
+where UPDATE: Update + UpdateNew + 'static,
       UPDATE::Msg: Send,
 {
     let stream = EventStream::new();
@@ -174,20 +179,28 @@ where UPDATE: Send + Update + UpdateNew + 'static,
 
 /// Initialize a component by creating its subscriptions and dispatching the messages from the
 /// stream.
-pub fn init_component<UPDATE>(stream: &EventStream<UPDATE::Msg>, mut component: UPDATE, relm: &Relm<UPDATE>)
-    where UPDATE: Send + Update + 'static,
+pub fn init_component<UPDATE>(stream: &EventStream<UPDATE::Msg>, mut component: UPDATE, relm: &Relm<UPDATE>) ->
+    Receiver<UPDATE::Msg>
+    where UPDATE: Update + 'static,
           UPDATE::Msg: DisplayVariant + Send + 'static,
 {
     let stream = stream.clone();
     component.subscriptions(relm);
+    let (mut tx, mut rx) = glib_itc::channel();
+    rx.connect_recv(move |event| {
+        update_component(&mut component, event);
+        Continue(true)
+    });
     go!(move || {
         loop {
             match stream.get_event() {
-                Ok(event) => update_component(&mut component, event),
+                Ok(event) => tx.send(event),
                 Err(_) => break, // Stream was disconnected.
             }
         }
+        ()
     });
+    rx
 }
 
 fn update_component<COMPONENT>(component: &mut COMPONENT, event: COMPONENT::Msg)

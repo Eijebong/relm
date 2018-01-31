@@ -48,6 +48,8 @@
 )]
 
 /*
+ * TODO: remove any reference to tokio and futures.
+ *
  * TODO: look at these projects for a new design:
  * https://github.com/alexflint/gallium
  * https://github.com/lxn/walk
@@ -104,6 +106,7 @@
  */
 
 extern crate glib;
+extern crate glib_itc;
 extern crate glib_sys;
 extern crate gobject_sys;
 extern crate gtk;
@@ -189,38 +192,37 @@ macro_rules! use_impl_self_type {
 
 fn create_widget_test<WIDGET>(model_param: WIDGET::ModelParam) -> Component<WIDGET>
     where WIDGET: Widget + 'static,
-          WIDGET::Msg: DisplayVariant + 'static,
+          WIDGET::Msg: DisplayVariant + Send + 'static,
 {
-    let (widget, component, relm) = create_widget(model_param);
-    init_component::<WIDGET>(widget.stream(), component, &relm);
+    let (mut widget, component, relm) = create_widget(model_param);
+    let rx = init_component::<WIDGET>(widget.stream(), component, &relm);
+    widget.set_receiver(rx);
     widget
 }
 
 /// Create a new relm widget without adding it to an existing widget.
 /// This is useful when a relm widget is at the root of another relm widget.
-pub fn create_component<CHILDWIDGET, WIDGET>(relm: &Relm<WIDGET>, model_param: CHILDWIDGET::ModelParam)
-        -> Component<CHILDWIDGET>
+pub fn create_component<CHILDWIDGET>(model_param: CHILDWIDGET::ModelParam) -> Component<CHILDWIDGET>
     where CHILDWIDGET: Widget + 'static,
-          CHILDWIDGET::Msg: DisplayVariant + 'static,
-          WIDGET: Widget,
+          CHILDWIDGET::Msg: DisplayVariant + Send + 'static,
 {
-    let (widget, component, child_relm) = create_widget::<CHILDWIDGET>(model_param);
-    init_component::<CHILDWIDGET>(widget.stream(), component, &child_relm);
+    let (mut widget, component, child_relm) = create_widget::<CHILDWIDGET>(model_param);
+    let rx = init_component::<CHILDWIDGET>(widget.stream(), component, &child_relm);
+    widget.set_receiver(rx);
     widget
 }
 
 /// Create a new relm container widget without adding it to an existing widget.
 /// This is useful when a relm widget is at the root of another relm widget.
-pub fn create_container<CHILDWIDGET, WIDGET>(relm: &Relm<WIDGET>, model_param: CHILDWIDGET::ModelParam)
-        -> ContainerComponent<CHILDWIDGET>
+pub fn create_container<CHILDWIDGET>(model_param: CHILDWIDGET::ModelParam) -> ContainerComponent<CHILDWIDGET>
     where CHILDWIDGET: Container + Widget + 'static,
-          CHILDWIDGET::Msg: DisplayVariant + 'static,
-          WIDGET: Widget,
+          CHILDWIDGET::Msg: DisplayVariant + Send + 'static,
 {
-    let (widget, component, child_relm) = create_widget::<CHILDWIDGET>(model_param);
+    let (mut widget, component, child_relm) = create_widget::<CHILDWIDGET>(model_param);
     let container = component.container().clone();
     let containers = component.other_containers();
-    init_component::<CHILDWIDGET>(widget.stream(), component, &child_relm);
+    let rx = init_component::<CHILDWIDGET>(widget.stream(), component, &child_relm);
+    widget.set_receiver(rx);
     ContainerComponent::new(widget, container, containers)
 }
 
@@ -306,7 +308,7 @@ fn init_gtk() {
 /// ```
 pub fn init_test<WIDGET>(model_param: WIDGET::ModelParam) -> Result<Component<WIDGET>, ()>
     where WIDGET: Widget + 'static,
-          WIDGET::Msg: DisplayVariant + 'static
+          WIDGET::Msg: DisplayVariant + Send + 'static,
 {
     init_gtk();
 
@@ -317,12 +319,13 @@ pub fn init_test<WIDGET>(model_param: WIDGET::ModelParam) -> Result<Component<WI
 /// Initialize a widget.
 pub fn init<WIDGET>(model_param: WIDGET::ModelParam) -> Result<Component<WIDGET>, ()>
     where WIDGET: Widget + 'static,
-          WIDGET::Msg: DisplayVariant + 'static
+          WIDGET::Msg: DisplayVariant + Send + 'static
 {
     gtk::init().map_err(|_| ())?;
 
-    let (widget, component, relm) = create_widget::<WIDGET>(model_param);
-    init_component::<WIDGET>(widget.stream(), component, &relm);
+    let (mut widget, component, relm) = create_widget::<WIDGET>(model_param);
+    let rx = init_component::<WIDGET>(widget.stream(), component, &relm);
+    widget.set_receiver(rx);
     Ok(widget)
 }
 
@@ -382,6 +385,7 @@ pub fn init<WIDGET>(model_param: WIDGET::ModelParam) -> Result<Component<WIDGET>
 /// ```
 pub fn run<WIDGET>(model_param: WIDGET::ModelParam) -> Result<(), ()>
     where WIDGET: Widget + 'static,
+          WIDGET::Msg: Send,
 {
     let _component = init::<WIDGET>(model_param)?;
     gtk::main();

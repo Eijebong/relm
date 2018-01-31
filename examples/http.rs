@@ -25,8 +25,9 @@ extern crate gdk;
 extern crate gdk_pixbuf;
 extern crate gtk;
 extern crate hyper;
-extern crate hyper_tls;
 extern crate json;
+#[macro_use]
+extern crate may;
 #[macro_use]
 extern crate relm;
 extern crate relm_attributes;
@@ -34,20 +35,20 @@ extern crate relm_attributes;
 extern crate relm_derive;
 extern crate simplelog;
 
-use std::str::FromStr;
+use std::io::Read;
 
-use futures::{Future, Stream};
 use gdk::RGBA;
 use gdk_pixbuf::PixbufLoader;
 use gtk::{
     ButtonExt,
+    ImageExt,
     Inhibit,
+    LabelExt,
     OrientableExt,
+    StateFlags,
     WidgetExt,
-    STATE_FLAG_NORMAL,
 };
 use hyper::{Client, Error};
-use hyper_tls::HttpsConnector;
 use gtk::Orientation::Vertical;
 use relm::{Relm, Widget};
 use relm_attributes::widget;
@@ -62,6 +63,7 @@ pub struct Model {
     button_enabled: bool,
     gif_url: String,
     loader: PixbufLoader,
+    relm: Relm<Win>,
     topic: String,
     text: String,
 }
@@ -78,12 +80,13 @@ pub enum Msg {
 
 #[widget]
 impl Widget for Win {
-    fn model() -> Model {
+    fn model(relm: &Relm<Self>, _: ()) -> Model {
         let topic = "cats";
         Model {
             button_enabled: true,
             gif_url: "waiting.gif".to_string(),
             loader: PixbufLoader::new(),
+            relm: relm.clone(),
             topic: topic.to_string(),
             text: topic.to_string(),
         }
@@ -104,26 +107,45 @@ impl Widget for Win {
                 // loader.
                 self.model.button_enabled = false;
 
-                let url = format!("https://api.giphy.com/v1/gifs/random?api_key=dc6zaTOxFJmzC&tag={}",
+                let url = format!("http://api.giphy.com/v1/gifs/random?api_key=dc6zaTOxFJmzC&tag={}",
                     self.model.topic);
-                let http_future = http_get(&url, relm.handle());
-                relm.connect_exec(http_future, NewGif, hyper_error_to_msg);
+                let stream = self.model.relm.clone();
+                go!(move || {
+                    let client = Client::new();
+                    let mut response = client.get(&*url)
+                        .send()
+                        .expect("FetchUrl client");
+                    let mut buffer = vec![];
+                    response.read_to_end(&mut buffer).expect("FetchUrl read_to_end");
+                    stream.stream().emit(NewGif(buffer));
+                });
             },
             HttpError(error) => {
                 self.model.button_enabled = true;
                 self.model.text = format!("HTTP error: {}", error);
-                self.label.override_color(STATE_FLAG_NORMAL, RED);
+                self.label.override_color(StateFlags::NORMAL, RED);
             },
             ImageChunk(chunk) => {
                 self.model.loader.loader_write(&chunk).unwrap();
             },
             NewGif(result) => {
                 let string = String::from_utf8(result).unwrap();
-                let json = json::parse(&string).unwrap();
-                let url = &json["data"]["image_url"].as_str().unwrap();
-                let http_future = http_get_stream(url, relm.handle());
-                let future = relm.connect(http_future, ImageChunk, hyper_error_to_msg);
-                relm.connect_exec_ignore_err(future, DownloadCompleted);
+                let mut json = json::parse(&string).unwrap();
+                let url = json["data"]["image_url"].take_string().unwrap();
+                let stream = self.model.relm.clone();
+                go!(move || {
+                    let client = Client::new();
+                    let mut response = client.get(&url)
+                        .send()
+                        .expect("NewGif client");
+                    let mut buffer = [0; 4096];
+                    let mut size_read = 1;
+                    while size_read > 0 {
+                        size_read = response.read(&mut buffer).expect("NewGif read");
+                        stream.stream().emit(ImageChunk(buffer[..size_read].to_vec()));
+                    }
+                    stream.stream().emit(DownloadCompleted);
+                });
             },
             Quit => gtk::main_quit(),
         }
@@ -157,30 +179,6 @@ impl Drop for Win {
         // This is necessary to avoid a GDK warning.
         self.model.loader.close().ok(); // Ignore the error since no data was loaded.
     }
-}
-
-fn http_get<'a>(url: &str, handle: &Handle) -> impl Future<Item=Vec<u8>, Error=Error> + 'a {
-    let stream = http_get_stream(url, handle);
-    stream.concat()
-}
-
-fn http_get_stream<'a>(url: &str, handle: &Handle) -> impl Stream<Item=Vec<u8>, Error=Error> + 'a {
-    let url = hyper::Uri::from_str(url).unwrap();
-    let connector = HttpsConnector::new(2, handle);
-    let client = Client::configure()
-        .connector(connector)
-        .build(handle);
-    client.get(url).and_then(|res| {
-        Ok(res.body()
-           .map(|chunk| chunk.to_vec())
-       )
-    })
-        .flatten_stream()
-}
-
-#[allow(needless_pass_by_value)]
-fn hyper_error_to_msg(error: Error) -> Msg {
-    HttpError(error.to_string())
 }
 
 fn main() {

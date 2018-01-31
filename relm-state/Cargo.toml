@@ -7,11 +7,9 @@ repository = "https://github.com/antoyo/relm"
 version = "0.12.0"
 [dependencies]
 glib = "^0.4.1"
+glib-itc = "^0.4.0"
 log = "^0.3.7"
 may = "^0.2.0"
-
-[dependencies.glib-itc]
-path = "/home/bouanto/Ordinateur/Programmation/Rust/Projets/glib-itc"
 
 [dependencies.relm-core]
 path = "../relm-core"

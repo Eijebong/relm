@@ -131,7 +131,8 @@ impl Widget for Win {
             NewGif(result) => {
                 let string = String::from_utf8(result).unwrap();
                 let mut json = json::parse(&string).unwrap();
-                let url = json["data"]["image_url"].take_string().unwrap();
+                let url = json["data"]["image_url"].take_string().unwrap()
+                    .replace("https://", "http://");
                 let stream = self.model.relm.clone();
                 go!(move || {
                     let client = Client::new();

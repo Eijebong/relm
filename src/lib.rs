@@ -48,6 +48,7 @@
 )]
 
 /*
+ * TODO: Switch to may-http from hyper.
  * TODO: remove any reference to tokio and futures.
  *
  * TODO: look at these projects for a new design:

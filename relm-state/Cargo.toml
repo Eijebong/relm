@@ -9,7 +9,8 @@ version = "0.12.0"
 glib = "^0.4.1"
 glib-itc = "^0.4.0"
 log = "^0.3.7"
-may = "^0.2.0"
+#may = "^0.2.0"
+may = { git = "https://github.com/Xudong-Huang/may.git" }
 
 [dependencies.relm-core]
 path = "../relm-core"
